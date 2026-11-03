@@ -1,0 +1,35 @@
+services:
+  db:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: rootpw
+      MARIADB_DATABASE: wp
+      MARIADB_USER: wp
+      MARIADB_PASSWORD: wppw
+  wp:
+    image: wordpress:php8.2-apache
+    depends_on: [db]
+    ports: ["127.0.0.1:8093:80"]
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wppw
+      WORDPRESS_DB_NAME: wp
+    volumes:
+      - wpdata:/var/www/html
+      - ./zips:/zips:ro
+  cli:
+    image: wordpress:cli-php8.2
+    depends_on: [db, wp]
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wp
+      WORDPRESS_DB_PASSWORD: wppw
+      WORDPRESS_DB_NAME: wp
+    volumes:
+      - wpdata:/var/www/html
+      - ./zips:/zips:ro
+    entrypoint: ["sleep", "infinity"]
+volumes:
+  wpdata:
